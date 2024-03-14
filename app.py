@@ -71,4 +71,4 @@ def handle_send_candidate(json):
         emit('error', {'error': f'Falta el campo {e.args[0]}'})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=80)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
