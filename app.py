@@ -1,45 +1,74 @@
-from flask import Flask, request, jsonify, request
+from flask import Flask
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
-import threading
 
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Este diccionario almacenar   la informaci  n de se  alizaci  n de los usuarios
-# La clave es un identificador de usuario, y el valor es un diccionario con IP y puerto
-user_sessions = {}
+@socketio.on_error_default  # Captura todos los espacios de nombres sin un manejador de errores registrado.
+def default_error_handler(e):
+    print(f'Ha ocurrido un error: {str(e)}')
+    emit('error', {'error': 'Ocurrió un error inesperado'})
 
-# Lock para controlar el acceso concurrente al diccionario user_sessions
-lock = threading.Lock()
+@app.route('/')
+def index():
+    return "Servidor de señalización para WebRTC"
 
-@app.route('/register', methods=['POST'])
-def register():
-    data = request.json
-    user_id = data.get('user_id')
-    ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
-    #ip_address = data.get('ip_address')
-    port = data.get('port')
+# Evento de conexión WebSocket
+@socketio.on('connect')
+def handle_connect():
+    print('Cliente conectado')
 
-    if not all([user_id, ip_address, port]):
-        return jsonify({'error': 'Falta informaci  n'}), 400
+# Evento de desconexión WebSocket
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Cliente desconectado')
 
-    with lock:
-        user_sessions[user_id] = {
-            'ip_address': ip_address,
-            'port': port
-        }
-    print(ip_address, user_id)
-    return jsonify({'message': 'Registro exitoso'}), 200
+# Unirse a una sala específica
+@socketio.on('join')
+def on_join(data):
+    try:
+        userId = data['userId']
+        room = data['room']
+        if not userId or not room:
+            raise ValueError('Faltan datos necesarios: userId o room.')
+        join_room(room)
+        print(f'{userId} se ha unido a la sala: {room}')
+        #emit('joined_room', {'message': f'{userId} se ha unido a la sala {room}'})
+        emit('joined_room', {'message': f'{userId} se ha unido a la sala {room}'}, to=room)
+    except KeyError as e:
+        emit('error', {'error': f'Falta el campo {e.args[0]}'})
+    except ValueError as e:
+        emit('error', {'error': str(e)})
 
-@app.route('/get_user/<user_id>', methods=['GET'])
-def get_user(user_id):
-    with lock:
-        user_info = user_sessions.get(user_id)
 
-    if user_info:
-        return jsonify(user_info), 200
-    else:
-        return jsonify({'error': 'Usuario no encontrado'}), 404
+# Manejar el envío de oferta SDP
+@socketio.on('send_offer')
+def handle_send_offer(json):
+    try:
+        room = json['target']
+        emit('receive_offer', json, room=room)
+    except KeyError as e:
+        emit('error', {'error': f'Falta el campo {e.args[0]}'})
+
+# Manejar el envío de respuesta SDP
+@socketio.on('send_answer')
+def handle_send_answer(json):
+    try:
+        room = json['target']
+        emit('receive_answer', json, room=room)
+    except KeyError as e:
+        emit('error', {'error': f'Falta el campo {e.args[0]}'})
+
+# Manejar el envío de candidatos ICE
+@socketio.on('send_candidate')
+def handle_send_candidate(json):
+    try:
+        room = json['target']
+        emit('receive_candidate', json, room=room)
+    except KeyError as e:
+        emit('error', {'error': f'Falta el campo {e.args[0]}'})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=80)
