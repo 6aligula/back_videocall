@@ -31,6 +31,7 @@ def on_join(data):
     try:
         userId = data['userId']
         room = data['room']
+        print(userId, room)
         if not userId or not room:
             raise ValueError('Faltan datos necesarios: userId o room.')
         join_room(room)
